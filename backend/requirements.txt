@@ -8,3 +8,4 @@ numpy
 pydub
 python-dotenv
 scipy
+openai

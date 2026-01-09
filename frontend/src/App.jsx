@@ -12,6 +12,9 @@ export default function App() {
   const [temperature, setTemperature] = useState(0.2);
   const [thinkingBudget, setThinkingBudget] = useState(0);
 
+  // Check if using GPT Audio model (has limitations: no images, no thinking)
+  const isGptAudio = modelId.startsWith("gpt-");
+
   const [prompt, setPrompt] = useState("");
 
   const SUGGESTIONS = [
@@ -186,10 +189,15 @@ export default function App() {
               <div>
                 <label>Model</label>
                 <select value={modelId} onChange={(e) => setModelId(e.target.value)}>
-                  <option value="gemini-3-pro-preview">gemini-3-pro</option>
-                  <option value="gemini-3-flash-preview">gemini-3-flash</option>
-                  <option value="gemini-2.0-flash-thinking-exp">gemini-2.0-thinking</option>
-                  <option value="gemini-2.0-flash-exp">gemini-2.0-flash</option>
+                  <optgroup label="OpenAI">
+                    <option value="gpt-audio">GPT Audio</option>
+                  </optgroup>
+                  <optgroup label="Gemini">
+                    <option value="gemini-3-pro-preview">gemini-3-pro</option>
+                    <option value="gemini-3-flash-preview">gemini-3-flash</option>
+                    <option value="gemini-2.0-flash-thinking-exp">gemini-2.0-thinking</option>
+                    <option value="gemini-2.0-flash-exp">gemini-2.0-flash</option>
+                  </optgroup>
                 </select>
               </div>
               <div>
@@ -205,10 +213,12 @@ export default function App() {
                 </select>
               </div>
               <div>
-                <label>Thinking</label>
+                <label style={{ opacity: isGptAudio ? 0.5 : 1 }}>Thinking {isGptAudio && <span style={{ fontSize: '0.7em', color: '#fbbf24' }}>(N/A)</span>}</label>
                 <select
-                  value={thinkingBudget}
+                  value={isGptAudio ? 0 : thinkingBudget}
                   onChange={(e) => setThinkingBudget(Number(e.target.value))}
+                  disabled={isGptAudio}
+                  style={{ opacity: isGptAudio ? 0.5 : 1 }}
                 >
                   <option value={0}>None</option>
                   <option value={1024}>Low</option>
@@ -218,6 +228,12 @@ export default function App() {
               </div>
             </div>
 
+            {isGptAudio && (
+              <div className="muted" style={{ fontSize: '0.8em', padding: '8px 12px', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '6px', borderLeft: '3px solid #fbbf24' }}>
+                <strong style={{ color: '#fbbf24' }}>GPT Audio Mode:</strong> Spectrogram image will not be sent (audio-only analysis). Thinking mode is not available.
+              </div>
+            )}
+
             <div className="hr" />
 
             <div>
@@ -226,7 +242,7 @@ export default function App() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 disabled={!!sessionId}
-                placeholder="Describe your engineering issue/goal..."
+                placeholder="Describe the style and direction..."
                 style={{ minHeight: '80px' }}
               />
               <div className="kpi" style={{ marginTop: "10px", gap: "6px" }}>

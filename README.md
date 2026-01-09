@@ -2,7 +2,7 @@
 
 A minimal “Mix Assistant” foundation:
 - **React (Vite) frontend**: upload audio, waveform playback, region selection (WaveSurfer Regions), prompt box
-- **FastAPI backend**: trims the selected region, generates a Mel spectrogram, and (optionally) calls Gemini via `google-genai`
+- **FastAPI backend**: trims the selected region, generates a Mel spectrogram, and calls Gemini via `google-genai`
 
 ## 1) Backend setup
 
@@ -47,4 +47,3 @@ Open `http://localhost:5173`
 
 - “Generate Spectrogram” calls **your backend only** (no Gemini) so you can preview the visual first.
 - “Analyze” trims + spectrogram + Gemini analysis and returns the advice + the spectrogram.
-- Model IDs are selectable; availability depends on your account/region.
