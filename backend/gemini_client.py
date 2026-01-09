@@ -73,7 +73,7 @@ def start_audio_chat_session(
     if thinking_budget and thinking_budget > 0:
         # If thinking is enabled, we might need to adjust config structure depending on SDK version
         # For this starter, we'll pass it if the user provides it, assuming a compatible model.
-        config_args["thinking_config"] = {"include_thoughts": True, "budget_token_count": thinking_budget}
+        config_args["thinking_config"] = {"include_thoughts": True}
 
     chat = client.chats.create(
         model=model_id,
