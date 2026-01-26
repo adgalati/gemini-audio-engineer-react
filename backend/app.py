@@ -21,6 +21,8 @@ from openai_client import (
 )
 from midi_engine import extract_and_generate_midi
 from audio_pipeline import AudioJobPipeline, start_processing_pipeline
+from job_manager import run_heavy_task
+
 
 
 app = FastAPI(title="Gemini Audio Engineer API")
@@ -74,9 +76,11 @@ def health():
 async def process_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    model: str = Form("demucs"),
 ):
     """
     Starts the full Phase 1 processing pipeline (Stems + MIDI) as a background job.
+    Uses Phase 2D job queuing.
     """
     # 1. Save upload to temporary location
     temp_path = _save_upload_to_temp(file)
@@ -85,10 +89,12 @@ async def process_audio(
     pipeline = AudioJobPipeline()
     job_id = pipeline.initialize_job(temp_path)
 
-    # 3. Queue the heavy processing
-    background_tasks.add_task(start_processing_pipeline, job_id)
+    # 3. Queue the heavy processing with semaphore enforcement
+    background_tasks.add_task(run_heavy_task, start_processing_pipeline, job_id, separation_model=model)
 
     return {"job_id": job_id, "status_url": f"/api/process/{job_id}"}
+
+
 
 
 @app.get("/api/process/{job_id}")

@@ -113,3 +113,33 @@ def send_chat_message(session_id: str, user_message: str) -> str:
     response = chat.send_message(message=user_message)
     return response.text
 
+def validate_midi_with_gemini(midi_summaries: str) -> str:
+    """
+    Prompts Gemini to validate the musicality of the extracted MIDI summaries.
+    Returns the model's critique and suggested corrections.
+    """
+    client = _get_client()
+    
+    prompt = f"""
+    You are a professional music theory expert and arranger.
+    I have extracted MIDI data from stems of a song.
+    
+    Below are the summaries of these MIDI files (note ranges, density, and samples).
+    Please analyze them for:
+    1. Pitch outliers (notes that seem far outside the expected range for the instrument).
+    2. Rhythm consistency (unusual gaps or overlaps).
+    3. Harmonic alignment (do these instruments seem to be in the same key?).
+    
+    MIDI Summaries:
+    {midi_summaries}
+    
+    Reply with a concise critique and specific suggested corrections (e.g., 'Transpose Bass down 1 octave').
+    """
+    
+    # We use a simple generate call for this (non-audio context)
+    response = client.models.generate_content(
+        model="gemini-2.0-flash", # Use a fast model for validation
+        contents=prompt
+    )
+    
+    return response.text

@@ -3,6 +3,9 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import Waveform from "../components/Waveform";
 import { analyzeAudio, fetchSpectrogram, sendChatMessage, startAudioProcessing, getJobStatus } from "../api";
+import StemPlayer from "../components/StemPlayer";
+import MidiPreview from "../components/MidiPreview";
+
 
 import logoImg from "../assets/logo.png";
 import Image from "next/image";
@@ -53,8 +56,10 @@ export default function Page() {
     const [jobStatus, setJobStatus] = useState<any>(null);
     const [jobLoading, setJobLoading] = useState(false);
     const [pollingActive, setPollingActive] = useState(false);
+    const [profModel, setProfModel] = useState("demucs");
 
     const chatEndRef = useRef<HTMLDivElement>(null);
+
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -159,10 +164,11 @@ export default function Page() {
         setJobLoading(true);
         setJobStatus(null);
         try {
-            const data = await startAudioProcessing(file);
+            const data = await startAudioProcessing(file, profModel);
             setJobId(data.job_id);
             setPollingActive(true);
         } catch (e: any) {
+
             setError(e?.message || "Failed to start pipeline");
         } finally {
             setJobLoading(false);
@@ -360,14 +366,30 @@ export default function Page() {
                         <div className="stack" style={{ gap: '10px' }}>
                             <label style={{ color: 'var(--accent-secondary)' }}>🎹 Professional Expansion (Beta)</label>
                             <p style={{ fontSize: '0.85rem' }}>Extract deep stems and polyphonic MIDI from the full track.</p>
-                            <button
-                                className="btn secondary"
-                                style={{ borderColor: 'var(--accent-secondary)', color: 'var(--accent-secondary)' }}
-                                disabled={!file || jobLoading || pollingActive}
-                                onClick={runProfessionalPipeline}
-                            >
-                                {jobLoading ? "Initializing..." : pollingActive ? "Processing Stems..." : "Start Deep Extraction"}
-                            </button>
+
+                            <div className="row" style={{ gridTemplateColumns: "1fr 1fr", gap: '12px', alignItems: 'center' }}>
+                                <div>
+                                    <label style={{ fontSize: '0.7rem' }}>Model</label>
+                                    <select
+                                        value={profModel}
+                                        onChange={(e) => setProfModel(e.target.value)}
+                                        disabled={jobLoading || pollingActive}
+                                        style={{ width: '100%' }}
+                                    >
+                                        <option value="demucs">Demucs v4 (Balanced)</option>
+                                        <option value="umx">Open-Unmix (Clean Vocals)</option>
+                                    </select>
+                                </div>
+                                <button
+                                    className="btn secondary"
+                                    style={{ borderColor: 'var(--accent-secondary)', color: 'var(--accent-secondary)', marginTop: '20px' }}
+                                    disabled={!file || jobLoading || pollingActive}
+                                    onClick={runProfessionalPipeline}
+                                >
+                                    {jobLoading ? "..." : pollingActive ? "Processing..." : "Start Deep Extraction"}
+                                </button>
+                            </div>
+
 
                             {jobStatus && (
                                 <div className="card" style={{ padding: '12px', background: 'rgba(45, 212, 191, 0.05)', borderColor: 'var(--accent-secondary)' }}>
@@ -381,24 +403,57 @@ export default function Page() {
                                     <div className="muted" style={{ marginTop: '8px', fontSize: '0.75rem' }}>{jobStatus.message}</div>
 
                                     {jobStatus.state === "success" && (
-                                        <div className="stack" style={{ marginTop: '12px', gap: '8px' }}>
-                                            <label style={{ fontSize: '0.7rem' }}>Download Artifacts</label>
-                                            <div className="row" style={{ gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                                                <div className="stack" style={{ gap: '4px' }}>
-                                                    <span style={{ fontSize: '0.65rem' }}>Stems</span>
-                                                    {jobStatus.artifacts.stems.map((s: string) => (
-                                                        <a key={s} href={`http://localhost:8000/static/jobs/${jobId}/stems/${s}`} download className="pill" style={{ textAlign: 'center', textDecoration: 'none' }}>{s}</a>
-                                                    ))}
+                                        <div className="stack" style={{ marginTop: '20px', gap: '24px' }}>
+                                            <StemPlayer
+                                                stems={jobStatus.artifacts.stems.map((s: string) => ({
+                                                    name: s.replace(".wav", ""),
+                                                    url: `http://localhost:8000/static/jobs/${jobId}/stems/${s}`
+                                                }))}
+                                            />
+
+                                            <MidiPreview
+                                                jobId={jobId!}
+                                                midiFiles={jobStatus.artifacts.midi}
+                                                validationReport={jobStatus.validation_report}
+                                            />
+
+                                            <div className="card" style={{ background: 'rgba(45, 212, 191, 0.1)', borderColor: 'var(--accent-secondary)' }}>
+                                                <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <div className="stack" style={{ gap: '4px' }}>
+                                                        <label style={{ color: 'var(--accent-secondary)' }}>🏁 DAW Ready: REAPER Project</label>
+                                                        <p style={{ fontSize: '0.75rem' }}>Full session with stems and MIDI tracks mapped and ready.</p>
+                                                    </div>
+                                                    <a
+                                                        href={`http://localhost:8000/static/jobs/${jobId}/${jobStatus.artifacts.project[0]}`}
+                                                        download
+                                                        className="btn"
+                                                        style={{ background: 'var(--accent-secondary)', color: '#000' }}
+                                                    >
+                                                        EXPORT TO REAPER (.RPP)
+                                                    </a>
                                                 </div>
-                                                <div className="stack" style={{ gap: '4px' }}>
-                                                    <span style={{ fontSize: '0.65rem' }}>MIDI</span>
-                                                    {jobStatus.artifacts.midi.map((m: string) => (
-                                                        <a key={m} href={`http://localhost:8000/static/jobs/${jobId}/midi/${m}`} download className="pill" style={{ textAlign: 'center', textDecoration: 'none', background: 'rgba(129, 140, 248, 0.1)' }}>{m}</a>
-                                                    ))}
+                                            </div>
+
+                                            <div className="stack" style={{ gap: '8px' }}>
+                                                <label style={{ fontSize: '0.7rem' }}>Individual Raw Artifacts</label>
+                                                <div className="row" style={{ gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                                    <div className="stack" style={{ gap: '4px' }}>
+                                                        <span style={{ fontSize: '0.65rem' }}>Stems</span>
+                                                        {jobStatus.artifacts.stems.map((s: string) => (
+                                                            <a key={s} href={`http://localhost:8000/static/jobs/${jobId}/stems/${s}`} download className="pill" style={{ textAlign: 'center', textDecoration: 'none', fontSize: '10px' }}>{s}</a>
+                                                        ))}
+                                                    </div>
+                                                    <div className="stack" style={{ gap: '4px' }}>
+                                                        <span style={{ fontSize: '0.65rem' }}>MIDI</span>
+                                                        {jobStatus.artifacts.midi.map((m: string) => (
+                                                            <a key={m} href={`http://localhost:8000/static/jobs/${jobId}/midi/${m}`} download className="pill" style={{ textAlign: 'center', textDecoration: 'none', background: 'rgba(129, 140, 248, 0.1)', fontSize: '10px' }}>{m}</a>
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     )}
+
                                 </div>
                             )}
                         </div>

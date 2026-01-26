@@ -114,6 +114,35 @@ def separate_stems_demucs(input_path: str, output_dir: str) -> bool:
         raise e
 
 
+def separate_stems_umx(input_path: str, output_dir: str) -> bool:
+    """
+    Separate audio into 4 stems (vocals, drums, bass, other) using Open-Unmix.
+    """
+    try:
+        # Construct umx command
+        # --device: Use CUDA if detected
+        # -o output_dir: Output base directory
+        cmd = [
+            "python", "-m", "openunmix.cli",
+            input_path,
+            "--model", "umxhq",
+            "--device", DEVICE,
+            "--outdir", output_dir
+        ]
+        
+        print(f"🎬 Running Open-Unmix: {' '.join(cmd)}")
+        result = subprocess.run(cmd, capture_output=True, check=True, text=True)
+        print("✅ Open-Unmix separation successful.")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Open-Unmix failed: {e.stderr}")
+        raise Exception(f"Stem separation (UMX) failed: {e.stderr}")
+    except Exception as e:
+        print(f"❌ Unexpected error in Open-Unmix: {e}")
+        raise e
+
+
+
 def split_vocals_basic(vocals_path: str, output_dir: str) -> Tuple[str, str]:
     """
     Split a vocals stem into lead and backing using a simple center-channel extraction.

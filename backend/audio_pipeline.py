@@ -64,29 +64,43 @@ class AudioJobPipeline:
         with open(self.status_path, "r") as f:
             return json.load(f)
 
-from midi_engine import extract_midi_from_audio
+from reaper_engine import generate_reaper_project
 
-def start_processing_pipeline(job_id: str):
+def start_processing_pipeline(job_id: str, separation_model: str = "demucs"):
     """
     The main background task function.
     """
     pipeline = AudioJobPipeline(job_id)
     try:
-        pipeline.update_status("processing_stems", progress=10, message="Starting initial stem separation (Demucs)...")
+        pipeline.update_status("processing_stems", progress=10, message=f"Starting stem separation ({separation_model})...")
         
         input_wav = os.path.join(pipeline.job_dir, "input.wav")
+        success = False
+        
         # 1. Core separation (4 stems)
-        separate_stems_demucs(input_wav, pipeline.job_dir)
+        if separation_model == "umx":
+            try:
+                separate_stems_umx(input_wav, pipeline.job_dir)
+                _move_umx_stems(pipeline.job_dir, pipeline.stems_dir)
+                success = True
+            except Exception as e:
+                print(f"⚠️ UMX failed, falling back to Demucs: {e}")
+                separation_model = "demucs" # Fallback
         
-        # Flatten Demucs output
-        model_name = "htdemucs"
-        filename_no_ext = os.path.splitext(os.path.basename(input_wav))[0]
-        demucs_out_base = os.path.join(pipeline.job_dir, model_name, filename_no_ext)
-        
-        if os.path.exists(demucs_out_base):
-            for stem_file in os.listdir(demucs_out_base):
-                shutil.move(os.path.join(demucs_out_base, stem_file), os.path.join(pipeline.stems_dir, stem_file))
-            shutil.rmtree(os.path.join(pipeline.job_dir, model_name))
+        if separation_model == "demucs" or not success:
+            separate_stems_demucs(input_wav, pipeline.job_dir)
+            
+            # Flatten Demucs output
+            model_name = "htdemucs"
+            filename_no_ext = os.path.splitext(os.path.basename(input_wav))[0]
+            demucs_out_base = os.path.join(pipeline.job_dir, model_name, filename_no_ext)
+            
+            if os.path.exists(demucs_out_base):
+                for stem_file in os.listdir(demucs_out_base):
+                    shutil.move(os.path.join(demucs_out_base, stem_file), os.path.join(pipeline.stems_dir, stem_file))
+                shutil.rmtree(os.path.join(pipeline.job_dir, model_name))
+            success = True
+
 
         # 2. Deep Refinement (Local splits)
         pipeline.update_status("processing_stems", progress=30, message="Refining stems (Vocals, Drums, Instruments)...")
@@ -119,29 +133,66 @@ def start_processing_pipeline(job_id: str):
             "guitars.wav": "guitars.mid",
             "keys_synth.wav": "keys_synth.mid",
             "harmony.wav": "harmony.mid",
-            "snare.wav": "drums_notes.mid" # basic-pitch doesn't do drums well, but we'll try snare for energy
+            "snare.wav": "drums_notes.mid" 
         }
         
+        midi_summaries = []
+        midi_files_found = []
         for i, (stem_name, midi_name) in enumerate(midi_map.items()):
             stem_path = os.path.join(pipeline.stems_dir, stem_name)
             if os.path.exists(stem_path):
                 pipeline.update_status(
                     "processing_midi", 
-                    progress=60 + int((i/len(midi_map)) * 30), 
+                    progress=60 + int((i/len(midi_map)) * 20), 
                     message=f"Extracting MIDI: {midi_name}..."
                 )
                 output_midi = os.path.join(pipeline.midi_dir, midi_name)
                 try:
                     extract_midi_from_audio(stem_path, output_midi)
+                    midi_files_found.append(midi_name)
+                    # For Phase 2B: Validation
+                    summary = summarize_midi_file(output_midi)
+                    midi_summaries.append(summary)
                 except Exception as midi_err:
                     print(f"⚠️ Failed to extract MIDI for {stem_name}: {midi_err}")
 
-        pipeline.update_status("success", progress=100, message="Processing complete. Deep stems and MIDI artifacts are ready.")
+        # 4. MIDI Validation (Phase 2B)
+        if midi_summaries:
+            pipeline.update_status("processing_midi", progress=85, message="Validating MIDI correctness with Gemini...")
+            validation_report = validate_midi_with_gemini("\n\n".join(midi_summaries))
+            
+            # Store validation report in status.json
+            current_status = pipeline.get_status()
+            current_status["validation_report"] = validation_report
+            with open(pipeline.status_path, "w") as f:
+                json.dump(current_status, f, indent=4)
+
+        # 5. REAPER Project Generation (Phase 2C)
+        pipeline.update_status("success", progress=95, message="Generating REAPER Project File...")
+        stems_found = os.listdir(pipeline.stems_dir)
+        rpp_name = f"Project_{job_id[:8]}.RPP"
+        rpp_path = os.path.join(pipeline.job_dir, rpp_name)
+        generate_reaper_project(job_id, stems_found, midi_files_found, rpp_path)
+        
+        # Update artifacts in status.json to index RPP
+        current_status = pipeline.get_status()
+        current_status["artifacts"]["project"] = [rpp_name]
+        with open(pipeline.status_path, "w") as f:
+            json.dump(current_status, f, indent=4)
+
+        pipeline.update_status("success", progress=100, message="Processing complete. Deep stems, MIDI, and REAPER Project are ready.")
     except Exception as e:
         import traceback
         error_msg = f"{str(e)}\n{traceback.format_exc()}"
         print(f"🔥 Pipeline Error: {error_msg}")
         pipeline.update_status("failed", error=str(e), message="An error occurred during processing.")
+
+    except Exception as e:
+        import traceback
+        error_msg = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"🔥 Pipeline Error: {error_msg}")
+        pipeline.update_status("failed", error=str(e), message="An error occurred during processing.")
+
 
 
 

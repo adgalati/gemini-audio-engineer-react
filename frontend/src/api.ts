@@ -82,9 +82,10 @@ export async function sendChatMessage(sessionId: string, message: string) {
 
   return handleResponse(res, "Failed to send message.");
 }
-export async function startAudioProcessing(file: File) {
+export async function startAudioProcessing(file: File, model: string = "demucs") {
   const fd = new FormData();
   fd.append("file", file);
+  fd.append("model", model);
 
   const res = await fetch(`${API_BASE}/api/process`, {
     method: "POST",
@@ -93,6 +94,7 @@ export async function startAudioProcessing(file: File) {
 
   return handleResponse(res, "Failed to start processing job.");
 }
+
 
 export async function getJobStatus(jobId: string) {
   const res = await fetch(`${API_BASE}/api/process/${jobId}`);

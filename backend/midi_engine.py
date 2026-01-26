@@ -168,3 +168,53 @@ def extract_and_generate_midi(
             print(f"MIDI Generation Error: {e}")
 
     return clean_text, midi_filename
+
+
+def summarize_midi_file(midi_path: str) -> str:
+    """
+    Generate a text summary of a MIDI file for Gemini validation.
+    Includes: key stats, note density, and a list of the first few notes.
+    """
+    try:
+        mid = mido.MidiFile(midi_path)
+        summary = []
+        
+        # Stats
+        note_count = 0
+        pitches = []
+        durations = []
+        
+        for track in mid.tracks:
+            for msg in track:
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    note_count += 1
+                    pitches.append(msg.note)
+        
+        if not pitches:
+            return "Empty MIDI file."
+
+        avg_pitch = sum(pitches) / len(pitches)
+        min_pitch, max_pitch = min(pitches), max(pitches)
+        
+        summary.append(f"MIDI Summary for {os.path.basename(midi_path)}:")
+        summary.append(f"- Note Count: {note_count}")
+        summary.append(f"- Pitch Range: {min_pitch} to {max_pitch} (Avg: {avg_pitch:.1f})")
+        
+        # Note list (sample first 20 notes)
+        sample_notes = []
+        curr_time = 0
+        for track in mid.tracks:
+            for msg in track:
+                curr_time += msg.time
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    sample_notes.append(f"Note {msg.note} at {curr_time} ticks")
+                    if len(sample_notes) >= 20: break
+            if len(sample_notes) >= 20: break
+            
+        summary.append("- First 20 notes sample:")
+        summary.extend(sample_notes)
+        
+        return "\n".join(summary)
+    except Exception as e:
+        return f"Error summarizing MIDI: {str(e)}"
+
