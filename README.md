@@ -2,7 +2,7 @@
 
 A vibe-coded **Mix Assistant AI** that provides "expert" audio engineering feedback:
 
-- **React (Vite) frontend**: Upload audio, waveform playback with region selection (WaveSurfer), chat-based consultation
+- **Next.js (App Router) frontend**: Upload audio, waveform playback with region selection (WaveSurfer), chat-based consultation
 - **FastAPI backend**: Trims selected audio regions, generates Mel spectrograms, and provides AI-powered mixing advice
 - **Multi-model support**: Choose between Gemini (with spectrogram analysis) or OpenAI GPT Audio models
 
@@ -97,7 +97,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`
+Open `http://localhost:3000`
 
 ---
 

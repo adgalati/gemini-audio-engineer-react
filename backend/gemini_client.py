@@ -1,7 +1,7 @@
 import os
+import time
 import uuid
 from typing import Dict, Optional, Tuple
-
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -47,7 +47,25 @@ def start_audio_chat_session(
     """
     client = _get_client()
 
+    print(f"Uploading file: {audio_path}...")
     uploaded_audio = client.files.upload(file=audio_path)
+
+    print(f"File uploaded: {uploaded_audio.name}. Waiting for processing...")
+    while True:
+        # We must fetch the file again to get the updated state
+        uploaded_audio = client.files.get(name=uploaded_audio.name)
+        
+        # Check state (handles 'PROCESSING', 'ACTIVE', 'FAILED')
+        state = uploaded_audio.state.name.upper() if hasattr(uploaded_audio.state, 'name') else str(uploaded_audio.state).upper()
+        
+        if state == "ACTIVE":
+            print("Audio processing complete. File is ACTIVE.")
+            break
+        elif state == "FAILED":
+            raise ValueError(f"Google failed to process the audio file. State: {state}")
+        
+        # Wait 1 second before checking again
+        time.sleep(1)
 
     spectrogram_part = types.Part.from_bytes(
         data=spectrogram_png_bytes,
@@ -71,6 +89,7 @@ def start_audio_chat_session(
         model=model_id,
         config=types.GenerateContentConfig(**config_args),
     )
+    print(f"Sending request to model: {model_id}...")
 
     # Send initial message with context
     response = chat.send_message(

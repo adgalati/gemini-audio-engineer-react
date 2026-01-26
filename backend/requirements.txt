@@ -10,3 +10,12 @@ python-dotenv
 scipy
 openai
 mido
+basic_pitch
+pretty_midi
+torch
+torchvision
+torchaudio
+demucs
+soundfile
+openunmix
+pyloudnorm
