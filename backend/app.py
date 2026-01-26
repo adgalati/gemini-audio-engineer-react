@@ -3,9 +3,12 @@ import os
 import tempfile
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile, Request, BackgroundTasks
+
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 from audio_processor import trim_audio_to_temp, generate_mel_spectrogram_png
 from gemini_client import (
@@ -17,8 +20,20 @@ from openai_client import (
     send_chat_message as openai_send_message,
 )
 from midi_engine import extract_and_generate_midi
+from audio_pipeline import AudioJobPipeline, start_processing_pipeline
+
 
 app = FastAPI(title="Gemini Audio Engineer API")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # This catches ALL errors (Quota, API keys, Crashes)
+    # and forces them to return as JSON so the frontend can read them.
+    print(f"🔥 CAUGHT EXCEPTION: {exc}")
+    return JSONResponse(
+        status_code=400, 
+        content={"detail": str(exc)}
+    )
 
 # Track which provider each session uses for follow-up routing
 _session_providers: dict[str, str] = {}  # session_id -> "gemini" | "openai"
@@ -30,12 +45,12 @@ os.makedirs(MIDI_OUTPUT_DIR, exist_ok=True)
 # Mount static files for MIDI downloads
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Dev CORS (Vite default)
+# Dev CORS Next.js default
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -53,6 +68,40 @@ def _save_upload_to_temp(upload: UploadFile) -> str:
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.post("/api/process")
+async def process_audio(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
+    """
+    Starts the full Phase 1 processing pipeline (Stems + MIDI) as a background job.
+    """
+    # 1. Save upload to temporary location
+    temp_path = _save_upload_to_temp(file)
+
+    # 2. Initialize the job
+    pipeline = AudioJobPipeline()
+    job_id = pipeline.initialize_job(temp_path)
+
+    # 3. Queue the heavy processing
+    background_tasks.add_task(start_processing_pipeline, job_id)
+
+    return {"job_id": job_id, "status_url": f"/api/process/{job_id}"}
+
+
+@app.get("/api/process/{job_id}")
+async def get_job_status(job_id: str):
+    """
+    Returns the current status of a processing job.
+    """
+    pipeline = AudioJobPipeline(job_id)
+    status = pipeline.get_status()
+    if "error" in status:
+        return JSONResponse(status_code=404, content=status)
+    return status
+
 
 
 @app.post("/api/spectrogram")
@@ -76,54 +125,66 @@ def analyze(
     file: UploadFile = File(...),
     startSec: float = Form(...),
     endSec: float = Form(...),
-    prompt: str = Form(...),
+    prompt: str = Form(""),
     modelId: str = Form(...),
     temperature: float = Form(0.2),
     thinkingBudget: int = Form(0),
     mode: str = Form("engineer"),
 ):
-    """
-    Trims audio, generates spectrogram, starts Chat Session with Gemini or OpenAI.
-    Returns initial advice + session ID.
-    """
-    original_path = _save_upload_to_temp(file)
-    trimmed_path = trim_audio_to_temp(original_path, startSec, endSec, export_format="wav")
-    spec_png = generate_mel_spectrogram_png(trimmed_path)
+    try:
+        """
+        Trims audio, generates spectrogram, starts Chat Session with Gemini or OpenAI.
+        Returns initial advice + session ID.
+        """
+        original_path = _save_upload_to_temp(file)
+        trimmed_path = trim_audio_to_temp(original_path, startSec, endSec, export_format="wav")
+        spec_png = generate_mel_spectrogram_png(trimmed_path)
 
-    # Route to appropriate provider based on model ID
-    if modelId.startswith("gpt-"):
-        session_id, advice = openai_start_session(
-            audio_path=trimmed_path,
-            spectrogram_png_bytes=spec_png,
-            user_prompt=prompt,
-            model_id=modelId,
-            temperature=float(temperature),
-            mode=mode,
+        # Route to appropriate provider based on model ID
+        if modelId.startswith("gpt-"):
+            session_id, advice = openai_start_session(
+                audio_path=trimmed_path,
+                spectrogram_png_bytes=spec_png,
+                user_prompt=prompt,
+                model_id=modelId,
+                temperature=float(temperature),
+                mode=mode,
+            )
+            _session_providers[session_id] = "openai"
+        else:
+            session_id, advice = gemini_start_session(
+                audio_path=trimmed_path,
+                spectrogram_png_bytes=spec_png,
+                user_prompt=prompt,
+                model_id=modelId,
+                temperature=float(temperature),
+                thinking_budget=thinkingBudget,
+                mode=mode,
+            )
+            _session_providers[session_id] = "gemini"
+
+        # Check for Empty Response
+        if advice is None:
+            raise Exception("AI Model returned no response. Check API Key and Model ID.")
+
+        # MIDI Generation
+        clean_advice, midi_filename = extract_and_generate_midi(advice, MIDI_OUTPUT_DIR)
+        midi_url = f"/static/midi/{midi_filename}" if midi_filename else None
+
+        return {
+            "sessionId": session_id,
+            "advice": clean_advice,
+            "spectrogramPngBase64": base64.b64encode(spec_png).decode("utf-8"),
+            "midiDownloadUrl": midi_url,
+        }
+    except Exception as e:
+        # CATCH ALL ERRORS HERE
+        print(f"Error in analyze endpoint: {e}")
+        # Return a 400 Bad Request with the EXACT error message from Python
+        return JSONResponse(
+            status_code=400, 
+            content={"detail": str(e)} 
         )
-        _session_providers[session_id] = "openai"
-    else:
-        session_id, advice = gemini_start_session(
-            audio_path=trimmed_path,
-            spectrogram_png_bytes=spec_png,
-            user_prompt=prompt,
-            model_id=modelId,
-            temperature=float(temperature),
-            thinking_budget=thinkingBudget,
-            mode=mode,
-        )
-        _session_providers[session_id] = "gemini"
-
-    # Process MIDI data from response (Producer mode)
-    clean_advice, midi_filename = extract_and_generate_midi(advice, MIDI_OUTPUT_DIR)
-    midi_url = f"/static/midi/{midi_filename}" if midi_filename else None
-
-    return {
-        "sessionId": session_id,
-        "advice": clean_advice,
-        "spectrogramPngBase64": base64.b64encode(spec_png).decode("utf-8"),
-        "midiDownloadUrl": midi_url,
-    }
-
 
 @app.post("/api/chat")
 def chat_reply(

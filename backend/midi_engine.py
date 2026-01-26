@@ -10,9 +10,40 @@ from typing import Optional, Tuple
 from uuid import uuid4
 
 import mido
+import pretty_midi
+from basic_pitch.inference import Model, predict
+from basic_pitch import ICASSP_2022_MODEL_PATH
+
+# Global model instance for efficiency (loads once)
+_basic_pitch_model = Model(ICASSP_2022_MODEL_PATH)
+
+
+def extract_midi_from_audio(audio_path: str, output_midi_path: str):
+    """
+    Extract polyphonic MIDI from an audio file using Spotify's basic-pitch.
+    """
+    print(f"🎵 Extracting MIDI from: {audio_path}")
+    # predict returns a dictionary with 'midi' as a pretty_midi object
+    model_output = predict(
+        audio_path_list=[audio_path],
+        model_or_model_path=_basic_pitch_model,
+        onset_threshold=0.5,
+        frame_threshold=0.3,
+        minimum_note_length=100, # ms
+    )
+    
+    # model_output is a dict-like object where keys are file paths
+    # The actual result is the first item in the list of results
+    midi_data = list(model_output.values())[0][1] # (model_output, midi_data, note_events)
+    
+    # Save the pretty_midi object
+    midi_data.write(output_midi_path)
+    print(f"✅ MIDI saved to: {output_midi_path}")
+    return output_midi_path
 
 
 def extract_and_generate_midi(
+
     response_text: str,
     output_dir: str = "static/midi"
 ) -> Tuple[str, Optional[str]]:

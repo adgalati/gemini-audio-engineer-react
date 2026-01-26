@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.esm.js";
@@ -8,11 +10,16 @@ import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.esm.js";
  * - Creates a draggable + resizable region
  * - Emits selection changes up to parent
  */
-export default function Waveform({ file, onSelectionChange }) {
-  const containerRef = useRef(null);
-  const wsRef = useRef(null);
-  const regionRef = useRef(null);
+interface WaveformProps {
+  file: File;
+  onSelectionChange?: (selection: { startSec: number; endSec: number; durationSec: number }) => void;
+}
 
+export default function Waveform({ file, onSelectionChange }: WaveformProps) {
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WaveSurfer | null>(null);
+  const regionRef = useRef<any>(null); // RegionsPlugin doesn't always export a 'SingleRegion' type easily
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -30,10 +37,10 @@ export default function Waveform({ file, onSelectionChange }) {
       regionRef.current = null;
     }
 
-    // 2. Create the Regions plugin instance first
+    // Create the Regions plugin instance first
     const wsRegions = RegionsPlugin.create();
 
-    // 3. Create WaveSurfer
+    // Create WaveSurfer
     const ws = WaveSurfer.create({
       container: containerRef.current,
       height: 120,
@@ -61,7 +68,7 @@ export default function Waveform({ file, onSelectionChange }) {
       const start = 0;
       const end = Math.min(dur, 600);
 
-      // 4. Add region via the plugin instance
+      // Add region via the plugin instance
       const r = wsRegions.addRegion({
         start,
         end,
@@ -78,8 +85,8 @@ export default function Waveform({ file, onSelectionChange }) {
     ws.on("pause", () => setIsPlaying(false));
     ws.on("finish", () => setIsPlaying(false));
 
-    // 5. Listen to region events on the plugin instance
-    wsRegions.on("region-updated", (region) => {
+    // Listen to region events on the plugin instance
+    wsRegions.on("region-updated", (region: any) => {
       onSelectionChange?.({
         startSec: region.start,
         endSec: region.end,
@@ -88,7 +95,7 @@ export default function Waveform({ file, onSelectionChange }) {
     });
 
     // Ensure we capture the final state after drag ends
-    wsRegions.on("region-out", (region) => {
+    wsRegions.on("region-out", (region: any) => {
       onSelectionChange?.({
         startSec: region.start,
         endSec: region.end,
