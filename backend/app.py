@@ -17,6 +17,8 @@ from openai_client import (
     send_chat_message as openai_send_message,
 )
 from midi_engine import extract_and_generate_midi
+from tempo_analyzer import detect_tempo
+from chordino import extract_chords, chords_to_beats, format_chords_for_llm
 
 app = FastAPI(title="Gemini Audio Engineer API")
 
@@ -62,13 +64,25 @@ def spectrogram(
     endSec: float = Form(...),
 ):
     """
-    Returns a Mel spectrogram PNG (base64) for the selected region.
+    Returns a Mel spectrogram PNG (base64), detected BPM, and chord progression.
     This does NOT call Gemini — it's just a preview.
     """
     original_path = _save_upload_to_temp(file)
     trimmed_path = trim_audio_to_temp(original_path, startSec, endSec, export_format="wav")
     spec_png = generate_mel_spectrogram_png(trimmed_path)
-    return {"spectrogramPngBase64": base64.b64encode(spec_png).decode("utf-8")}
+    
+    # Detect tempo
+    bpm, beat_times = detect_tempo(trimmed_path)
+    
+    # Extract chords and convert to beat-based format
+    raw_chords = extract_chords(trimmed_path)
+    chords = chords_to_beats(raw_chords, bpm)
+    
+    return {
+        "spectrogramPngBase64": base64.b64encode(spec_png).decode("utf-8"),
+        "bpm": round(bpm, 1),
+        "chords": chords
+    }
 
 
 @app.post("/api/analyze")
@@ -81,6 +95,8 @@ def analyze(
     temperature: float = Form(0.2),
     thinkingBudget: int = Form(0),
     mode: str = Form("engineer"),
+    bpm: Optional[float] = Form(None),  # User-edited BPM from frontend
+    chords: Optional[str] = Form(None),  # User-edited chords JSON from frontend
 ):
     """
     Trims audio, generates spectrogram, starts Chat Session with Gemini or OpenAI.
@@ -89,13 +105,44 @@ def analyze(
     original_path = _save_upload_to_temp(file)
     trimmed_path = trim_audio_to_temp(original_path, startSec, endSec, export_format="wav")
     spec_png = generate_mel_spectrogram_png(trimmed_path)
+    
+    # For Producer mode, use user-provided BPM/chords OR detect if not provided
+    import json
+    musical_context = ""
+    final_bpm = bpm
+    final_chords = []
+    
+    if mode == "producer":
+        # Parse chords JSON if provided
+        if chords:
+            try:
+                final_chords = json.loads(chords)
+            except json.JSONDecodeError:
+                final_chords = []
+        
+        # If no user-provided data, detect it
+        if not final_bpm or not final_chords:
+            detected_bpm, beat_times = detect_tempo(trimmed_path)
+            raw_chords = extract_chords(trimmed_path)
+            
+            if not final_bpm:
+                final_bpm = detected_bpm
+            if not final_chords:
+                final_chords = chords_to_beats(raw_chords, detected_bpm)
+        
+        # Format for LLM
+        if final_chords and final_bpm:
+            musical_context = format_chords_for_llm(final_chords, final_bpm)
+    
+    # Prepend musical context to user prompt if available
+    enhanced_prompt = f"{musical_context}\n\n{prompt}" if musical_context else prompt
 
     # Route to appropriate provider based on model ID
     if modelId.startswith("gpt-"):
         session_id, advice = openai_start_session(
             audio_path=trimmed_path,
             spectrogram_png_bytes=spec_png,
-            user_prompt=prompt,
+            user_prompt=enhanced_prompt,
             model_id=modelId,
             temperature=float(temperature),
             mode=mode,
@@ -105,7 +152,7 @@ def analyze(
         session_id, advice = gemini_start_session(
             audio_path=trimmed_path,
             spectrogram_png_bytes=spec_png,
-            user_prompt=prompt,
+            user_prompt=enhanced_prompt,
             model_id=modelId,
             temperature=float(temperature),
             thinking_budget=thinkingBudget,
@@ -122,6 +169,8 @@ def analyze(
         "advice": clean_advice,
         "spectrogramPngBase64": base64.b64encode(spec_png).decode("utf-8"),
         "midiDownloadUrl": midi_url,
+        "bpm": final_bpm,
+        "chords": final_chords,
     }
 
 

@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import Waveform from "./components/Waveform.jsx";
+import ChordDisplay from "./components/ChordDisplay.jsx";
 import { analyzeAudio, fetchSpectrogram, sendChatMessage } from "./api.js";
 import placeholderImg from "./assets/placeholder.png";
 import logoImg from "./assets/logo.png";
@@ -37,6 +38,9 @@ export default function App() {
   const SUGGESTIONS = mode === "engineer" ? ENGINEER_SUGGESTIONS : PRODUCER_SUGGESTIONS;
 
   const [spectrogramB64, setSpectrogramB64] = useState("");
+  const [bpm, setBpm] = useState(null);
+  const [originalBpm, setOriginalBpm] = useState(null); // Store original detected BPM for ratio calculations
+  const [chords, setChords] = useState([]);
 
   // Chat State
   const [sessionId, setSessionId] = useState(null);
@@ -66,6 +70,8 @@ export default function App() {
     setSessionId(null);
     setError("");
     setSpectrogramB64("");
+    setBpm(null);
+    setChords([]);
   };
 
   const onSelectionChange = useCallback((sel) => {
@@ -83,6 +89,9 @@ export default function App() {
         endSec: selection.endSec,
       });
       setSpectrogramB64(data.spectrogramPngBase64);
+      setBpm(data.bpm || null);
+      setOriginalBpm(data.bpm || null); // Store original for ratio calculations
+      setChords(data.chords || []);
     } catch (e) {
       setError(e?.message || String(e));
     } finally {
@@ -110,6 +119,8 @@ export default function App() {
         temperature,
         thinkingBudget,
         mode,
+        bpm,      // Pass user-edited BPM
+        chords,   // Pass user-edited chords
       });
 
       setSessionId(data.sessionId);
@@ -197,6 +208,26 @@ export default function App() {
                 <div className="muted">Visual data will appear after analysis</div>
               </div>
             )}
+
+            {/* Chord Display - shown in Producer mode when chords detected */}
+            {mode === "producer" && chords.length > 0 && (
+              <ChordDisplay
+                bpm={bpm}
+                chords={chords}
+                onBpmChange={(newBpm) => {
+                  // Recalculate chord beats based on BPM ratio
+                  const ratio = newBpm / bpm;
+                  const adjustedChords = chords.map(c => ({
+                    ...c,
+                    start_beat: c.start_beat * ratio,
+                    duration_beats: c.duration_beats * ratio,
+                  }));
+                  setBpm(newBpm);
+                  setChords(adjustedChords);
+                }}
+                onChordsChange={(updatedChords) => setChords(updatedChords)}
+              />
+            )}
           </section>
         </div>
 
@@ -276,7 +307,7 @@ export default function App() {
             <div className="hr" />
 
             <div>
-              <label>3) Engineer Directives</label>
+              <label>3) {mode === "engineer" ? "Engineer Directives" : "Producer Directives"}</label>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -300,18 +331,31 @@ export default function App() {
 
             <div className="row" style={{ gridTemplateColumns: "1fr 1fr", gap: '12px' }}>
               <button className="btn secondary" disabled={!canAct || loadingSpec} onClick={generateSpectrogram}>
-                {loadingSpec ? "Rendering..." : "Preview"}
+                {loadingSpec ? "Analyzing Audio..." : (mode === "producer" ? "Detect Chords" : "Preview")}
               </button>
-              <button className="btn" disabled={!canAct || loadingAnalyze || !!sessionId} onClick={runAnalysis}>
+              <button
+                className="btn"
+                disabled={!canAct || loadingAnalyze || !!sessionId || (mode === "producer" && chords.length === 0)}
+                onClick={runAnalysis}
+                title={mode === "producer" && chords.length === 0 ? "Click 'Detect Chords' first" : ""}
+              >
                 {loadingAnalyze ? (
                   <span className="loading-text">Analyzing...</span>
                 ) : !!sessionId ? (
                   "Session Live"
+                ) : mode === "producer" && chords.length === 0 ? (
+                  "Detect Chords First"
                 ) : (
                   "Start Analysis"
                 )}
               </button>
             </div>
+
+            {mode === "producer" && chords.length === 0 && !sessionId && (
+              <div className="muted" style={{ fontSize: '0.8em', padding: '8px 12px', background: 'rgba(129, 140, 248, 0.1)', borderRadius: '6px', borderLeft: '3px solid var(--accent-primary)' }}>
+                <strong style={{ color: 'var(--accent-primary)' }}>Producer Mode:</strong> Click "Detect Chords" to extract the chord progression and tempo before analysis.
+              </div>
+            )}
 
             {error && (
               <div className="card" style={{ background: "rgba(239, 68, 68, 0.1)", borderColor: "rgba(239, 68, 68, 0.2)" }}>

@@ -23,6 +23,8 @@ You have been provided with:
 1) An audio file (which may contain any combination of instruments, loops, or stems).
 2) A spectrogram image of that audio.
 3) A prompt from the user with the style/direction they want to explore.
+4) Detected MUSICAL CONTEXT including tempo (BPM) and chord progression with beat positions.
+   Use these chords as the harmonic foundation for your suggestions.
 
 Your primary goal is to help BUILD and EXPAND the arrangement. You should:
 

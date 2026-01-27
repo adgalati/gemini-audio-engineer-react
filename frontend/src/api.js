@@ -18,7 +18,7 @@ export async function fetchSpectrogram({ file, startSec, endSec }) {
   return res.json();
 }
 
-export async function analyzeAudio({ file, startSec, endSec, prompt, modelId, temperature, thinkingBudget, mode }) {
+export async function analyzeAudio({ file, startSec, endSec, prompt, modelId, temperature, thinkingBudget, mode, bpm, chords }) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("startSec", String(startSec));
@@ -28,6 +28,10 @@ export async function analyzeAudio({ file, startSec, endSec, prompt, modelId, te
   fd.append("temperature", String(temperature));
   if (thinkingBudget) fd.append("thinkingBudget", String(thinkingBudget));
   fd.append("mode", mode || "engineer");
+
+  // Pass user-edited BPM and chords for Producer mode
+  if (bpm) fd.append("bpm", String(bpm));
+  if (chords && chords.length > 0) fd.append("chords", JSON.stringify(chords));
 
   const res = await fetch(`${API_BASE}/api/analyze`, {
     method: "POST",
