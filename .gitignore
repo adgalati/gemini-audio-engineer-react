@@ -53,3 +53,8 @@ Thumbs.db
 *.log
 *.mid
 
+.next/
+out
+build
+dist
+.DS_Store
