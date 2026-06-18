@@ -77,11 +77,10 @@ async def process_audio(
     model: str = Form("demucs"),
     job_id: Optional[str] = Form(None),
 ):
-    """
-    Starts the full Phase 1 processing pipeline (Stems + MIDI) as a background job.
-    Uses Phase 2D job queuing.
-    """
-    # 1. Save upload to temporary location (only if not already in job)
+    if job_id in ["undefined", "null", "None", ""]:
+        job_id = None
+    
+    print(f"📥 Received /api/process request for job_id: {job_id}")
     temp_path = _save_upload_to_temp(file)
 
     # 2. Initialize or retrieve the job
@@ -143,6 +142,10 @@ def analyze(
     mode: str = Form("engineer"),
     job_id: Optional[str] = Form(None),
 ):
+    if job_id in ["undefined", "null", "None", ""]:
+        job_id = None
+    
+    print(f"📥 Received /api/analyze request for job_id: {job_id}")
     try:
         """
         Trims audio, generates spectrogram, starts Chat Session with Gemini or OpenAI.
@@ -185,15 +188,13 @@ def analyze(
             raise Exception("AI Model returned no response. Check API Key and Model ID.")
 
         # Save AI Advice to Analysis Folder
+        print(f"📝 Saving analysis advice for job {job_id}...")
         pipeline.save_analysis(advice)
 
-        # Use the job_id as the session identifier for chat routing
-        # (Updating _session_providers mapping to use job_id if necessary, 
-        # but here session_id is still returned for internal chat logic)
-
+        print(f"✅ Analysis for job {job_id} complete. Returning response.")
         return {
             "sessionId": session_id,
-            "jobId": job_id,
+            "job_id": job_id,
             "advice": advice,
             "spectrogramPngBase64": base64.b64encode(spec_png).decode("utf-8"),
         }

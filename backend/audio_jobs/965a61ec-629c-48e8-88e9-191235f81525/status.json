@@ -1,0 +1,13 @@
+{
+    "job_id": "965a61ec-629c-48e8-88e9-191235f81525",
+    "state": "failed",
+    "progress": 0,
+    "message": "An error occurred during processing.",
+    "error": "Stem separation failed:   File \"<string>\", line 1\n    import torchaudio; try: torchaudio.set_audio_backend('soundfile'); except Exception: pass; from demucs import __main__; __main__.main()\n                       ^^^\nSyntaxError: invalid syntax\n",
+    "updated_at": "2026-01-28T23:14:21.346277",
+    "artifacts": {
+        "stems": [],
+        "midi": [],
+        "analysis": []
+    }
+}

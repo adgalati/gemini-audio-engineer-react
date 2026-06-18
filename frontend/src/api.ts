@@ -76,7 +76,7 @@ export async function sendChatMessage(sessionId: string, message: string, jobId?
   const fd = new FormData();
   fd.append("sessionId", sessionId);
   fd.append("message", message);
-  if (jobId) fd.append("jobId", jobId);
+  if (jobId) fd.append("job_id", jobId);
 
   const res = await fetch(`${API_BASE}/api/chat`, {
     method: "POST",

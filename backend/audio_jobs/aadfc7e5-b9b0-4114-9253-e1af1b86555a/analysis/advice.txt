@@ -1,0 +1,40 @@
+This is a solid pop-rock production with a clear arrangement and strong energy. The transition from the intimate acoustic intro to the high-energy chorus is well-executed. To take this to a professional, radio-ready level, we need to focus on vocal placement, frequency separation in the dense sections, and overall "glue."
+
+Based on the audio and the spectrogram, here is a technical breakdown and a roadmap for your mix and master:
+
+### 1. Spectral Analysis & Frequency Balance
+Looking at the spectrogram, there is a significant jump in energy at the **0:42 mark** (the chorus). While the increase in amplitude is expected, the high-frequency density (above 8kHz) becomes very crowded.
+
+*   **The Problem:** The electric guitars and cymbals are fighting for the same space, which can lead to ear fatigue.
+*   **The Fix:** Use a high-shelf cut (about -1.5dB) on the rhythm electric guitars starting around 6kHz. This will "darken" them slightly, allowing the vocal air and the drum overheads to occupy the top end of the spectrum.
+
+### 2. Vocal Processing (The Focal Point)
+The vocals are well-performed but currently sit "on top" of the mix rather than being integrated into it.
+
+*   **Dynamics:** In the verse (0:14-0:42), the vocal is a bit dynamic. Use a fast compressor (like an 1176 style) with a 4:1 ratio to catch peaks, followed by a slower "leveling" compressor (like an LA-2A) to smooth out the performance.
+*   **Space:** The vocal feels a bit dry. To help it sit in the mix without washing it out, use a **Stereo Slap Delay** (30-60ms) with the feedback set very low. This adds width and depth without the "blurriness" of a long reverb.
+*   **Chorus Presence:** In the chorus (0:42+), the vocal needs to "cut." Apply a wide, gentle boost of 2dB at **3.5kHz**. This is the "presence" range that helps the human voice stay audible against a wall of distorted guitars.
+
+### 3. Drum & Bass Foundation
+The low end is present but lacks "thump" and definition.
+
+*   **The Snare:** The snare sounds a bit "boxy" around **500Hz**. Apply a narrow Q-factor cut of 3dB in this area to clear up the "mud" and let the "snap" of the snare shine through.
+*   **Kick and Bass Relationship:** To get that professional "glue," sidechain the Bass guitar to the Kick drum. Use a compressor on the Bass track triggered by the Kick, with a very fast attack and release, ducking the bass by only 2-3dB whenever the kick hits. This ensures the low-end transients remain clear.
+
+### 4. Acoustic Guitar (Intro & Verses)
+The acoustic guitar (0:00-0:14) has some build-up in the low-mids.
+
+*   **The Fix:** Apply a High-Pass Filter (HPF) up to **100Hz** to remove unnecessary rumble. Additionally, a small dip at **250Hz** will remove the "boomy" quality, making the guitar sound more "expensive" and shimmering.
+
+### 5. Mastering Recommendations
+Once the mix is balanced, the mastering stage should focus on cohesion.
+
+*   **Bus Compression:** Use a "Glue" compressor on the master fader (like an SSL Bus Comp style). Set a slow attack (30ms) and a fast release (0.1s) with a 2:1 ratio. You only want **1-2dB of gain reduction**. This will make the drums and guitars feel like they are "breathing" together.
+*   **Stereo Imaging:** Use a multiband imaging tool to widen the frequencies above 5kHz. Keep everything below 200Hz strictly mono to ensure the kick and bass stay centered and powerful.
+*   **Loudness Target:** For this genre, aim for an integrated loudness of **-9 to -11 LUFS**. This provides enough "punch" for streaming platforms without destroying the transients of your drums.
+
+**Summary of EQ Moves:**
+*   **Vocals:** +2dB @ 3.5kHz (Chorus only).
+*   **Snare:** -3dB @ 500Hz (Narrow Q).
+*   **Electric Guitars:** -2dB @ 3kHz (to make room for vocals) and a high shelf cut at 8kHz.
+*   **Acoustic Guitar:** HPF at 100Hz, -2dB @ 250Hz.

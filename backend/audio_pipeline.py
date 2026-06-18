@@ -24,6 +24,8 @@ class AudioJobPipeline:
     """
 
     def __init__(self, job_id: Optional[str] = None):
+        if job_id in ["undefined", "null", "None", ""]:
+            job_id = None
         self.job_id = (job_id or str(uuid.uuid4())).strip()
         self.job_dir = os.path.join(BASE_JOBS_DIR, self.job_id)
         self.stems_dir = os.path.join(self.job_dir, "stems")
@@ -43,11 +45,14 @@ class AudioJobPipeline:
         os.makedirs(self.midi_dir, exist_ok=True)
         os.makedirs(self.analysis_dir, exist_ok=True)
 
-        # Copy input file to job directory
         dest_input = os.path.join(self.job_dir, "input.wav")
-        shutil.copy(input_audio_path, dest_input)
+        # ONLY copy and reset status if it's a NEW job or input is missing
+        if not os.path.exists(dest_input):
+            print(f"📥 Copying input file for the first time: {dest_input}")
+            shutil.copy(input_audio_path, dest_input)
+        else:
+            print(f"🔄 Job {self.job_id} already exists. Skipping input copy.")
 
-        self.update_status("initialized", progress=0)
         return self.job_id
 
     @property
@@ -56,6 +61,23 @@ class AudioJobPipeline:
 
     def update_status(self, state: str, progress: int = 0, message: str = "", error: Optional[str] = None):
         """Update status.json with current progress."""
+        # PREVENT status reset to 0 if we are already at success or middle of processing
+        # unless explicitly requested or starting a new phase.
+        
+        # Check current status first
+        try:
+            if os.path.exists(self.status_path):
+                with open(self.status_path, "r") as f:
+                    curr = json.load(f)
+                    # If we are starting 'processing_stems' but we were already 'success', 
+                    # we ALLOW it because it's a new pipeline run.
+                    # But if we are 'initialized' and progress is 0, we don't overwrite success.
+                    if state == "initialized" and curr.get("state") == "success":
+                        print("🚫 Skipping reset to initialized as job is already successful.")
+                        return
+        except:
+            pass
+
         status = {
             "job_id": self.job_id,
             "state": state, # initialized, processing_stems, processing_midi, success, failed
@@ -82,9 +104,7 @@ class AudioJobPipeline:
 
     def get_status(self) -> Dict[str, Any]:
         """Read the current status.json."""
-        print(f"🔍 Checking status at: {self.status_path}")
         if not os.path.exists(self.status_path): 
-            print(f"❌ Status file NOT FOUND at: {self.status_path}")
             return {"error": "Job not found"}
         with open(self.status_path, "r") as f:
             return json.load(f)
@@ -102,12 +122,28 @@ from midi_engine import extract_midi_from_audio, summarize_midi_file
 from gemini_client import validate_midi_with_gemini
 
 def _move_umx_stems(output_dir: str, stems_dir: str):
-    """Open-Unmix saves stems directly in the outdir as vocals.wav, etc."""
-    for stem in ["vocals.wav", "drums.wav", "bass.wav", "other.wav"]:
-        src = os.path.join(output_dir, stem)
-        if os.path.exists(src):
-            shutil.move(src, os.path.join(stems_dir, stem))
+    """
+    Open-Unmix saves stems in a subfolder named after the input file. 
+    If input is input.wav, the folder is 'input'.
+    """
+    umx_out_dir = os.path.join(output_dir, "input")
+    if not os.path.exists(umx_out_dir):
+        # Fallback to direct output_dir if UMX behavior changes
+        umx_out_dir = output_dir
 
+    print(f"📦 Moving UMX stems from {umx_out_dir} to {stems_dir}")
+    found_any = False
+    for stem in ["vocals.wav", "drums.wav", "bass.wav", "other.wav"]:
+        src = os.path.join(umx_out_dir, stem)
+        if os.path.exists(src):
+            print(f"✅ Found stem: {src}")
+            shutil.move(src, os.path.join(stems_dir, stem))
+            found_any = True
+        else:
+            print(f"⚠️ UMX Stem NOT FOUND: {src}")
+    
+    if not found_any:
+        print(f"🔥 CRITICAL: No stems were moved from {umx_out_dir}")
 
 def start_processing_pipeline(job_id: str, separation_model: str = "demucs"):
     """
@@ -124,6 +160,7 @@ def start_processing_pipeline(job_id: str, separation_model: str = "demucs"):
         if separation_model == "umx":
             try:
                 separate_stems_umx(input_wav, pipeline.job_dir)
+                pipeline.update_status("processing_stems", progress=20, message="Separation successful. Organizing stems...")
                 _move_umx_stems(pipeline.job_dir, pipeline.stems_dir)
                 success = True
             except Exception as e:
@@ -132,21 +169,25 @@ def start_processing_pipeline(job_id: str, separation_model: str = "demucs"):
         
         if separation_model == "demucs" or not success:
             separate_stems_demucs(input_wav, pipeline.job_dir)
+            pipeline.update_status("processing_stems", progress=20, message="Separation successful. Organizing stems...")
             
-            # Flatten Demucs output
+            # Flatten Demucs output: htdemucs/input/bases.wav etc.
             model_name = "htdemucs"
-            filename_no_ext = os.path.splitext(os.path.basename(input_wav))[0]
-            demucs_out_base = os.path.join(pipeline.job_dir, model_name, filename_no_ext)
+            demucs_out_base = os.path.join(pipeline.job_dir, model_name, "input")
             
             if os.path.exists(demucs_out_base):
+                print(f"📦 Moving Demucs stems from {demucs_out_base} to {pipeline.stems_dir}")
                 for stem_file in os.listdir(demucs_out_base):
                     shutil.move(os.path.join(demucs_out_base, stem_file), os.path.join(pipeline.stems_dir, stem_file))
+                
+                # Cleanup model-specific folder
                 shutil.rmtree(os.path.join(pipeline.job_dir, model_name))
+            else:
+                print(f"⚠️ Demucs output folder NOT FOUND: {demucs_out_base}")
             success = True
 
-
         # 2. Deep Refinement (Local splits)
-        pipeline.update_status("processing_stems", progress=30, message="Refining stems (Vocals, Drums, Instruments)...")
+        pipeline.update_status("processing_stems", progress=30, message="Refining stems: Splitting Vocals...")
         
         # Vocals -> Lead / Backing
         vocals_path = os.path.join(pipeline.stems_dir, "vocals.wav")
@@ -154,12 +195,14 @@ def start_processing_pipeline(job_id: str, separation_model: str = "demucs"):
             split_vocals_basic(vocals_path, pipeline.stems_dir)
             os.remove(vocals_path)
 
+        pipeline.update_status("processing_stems", progress=40, message="Refining stems: Splitting Drums...")
         # Drums -> Kick / Snare / Hats
         drums_path = os.path.join(pipeline.stems_dir, "drums.wav")
         if os.path.exists(drums_path):
             split_drums_basic(drums_path, pipeline.stems_dir)
             os.remove(drums_path)
 
+        pipeline.update_status("processing_stems", progress=50, message="Refining stems: Splitting Instruments...")
         # Other -> Guitars / Keys / Harmony
         other_path = os.path.join(pipeline.stems_dir, "other.wav")
         if os.path.exists(other_path):

@@ -123,8 +123,9 @@ export default function Page() {
                 jobId: jobId || undefined,
             });
 
+            console.log("🔍 Analysis complete. Received data:", data);
             setSessionId(data.sessionId);
-            setJobId(data.jobId);
+            setJobId(data.job_id);
             setSpectrogramB64(data.spectrogramPngBase64);
             setChatMessages(prev => [...prev, {
                 role: "model",
@@ -181,6 +182,7 @@ export default function Page() {
             const poll = async () => {
                 try {
                     const status = await getJobStatus(jobId);
+                    console.log("🔄 Job Polling Status:", status);
                     setJobStatus(status);
                     if (status.state === "success" || status.state === "failed") {
                         setPollingActive(false);

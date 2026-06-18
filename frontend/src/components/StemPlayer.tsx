@@ -47,6 +47,10 @@ export default function StemPlayer({ stems }: StemPlayerProps) {
                 });
             });
 
+            ws.on("error", (err) => {
+                console.error(`❌ WaveSurfer Error for stem ${stem.name}:`, err);
+            });
+
             // Sync playback across all instances
             ws.on("interaction", () => {
                 const time = ws.getCurrentTime();
@@ -114,7 +118,7 @@ export default function StemPlayer({ stems }: StemPlayerProps) {
                 {stems.map((stem, i) => (
                     <div key={stem.name} className="row" style={{ gridTemplateColumns: '120px 1fr 180px', gap: '15px', alignItems: 'center', padding: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
                         <div style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>{stem.name}</div>
-                        <div ref={el => containersRef.current[i] = el} />
+                        <div ref={el => { containersRef.current[i] = el; }} />
                         <div className="row" style={{ gap: '8px' }}>
                             <button
                                 className={`pill ${solos[i] ? 'active' : ''}`}

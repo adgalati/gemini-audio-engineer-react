@@ -21,6 +21,16 @@ from pydub import AudioSegment
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"🚀 Audio Processor initialized. Using device: {DEVICE}")
 
+# Force torchaudio to use 'soundfile' backend to avoid broken torchcodec on Windows
+try:
+    import torchaudio
+    if hasattr(torchaudio, "set_audio_backend"):
+        torchaudio.set_audio_backend("soundfile")
+except ImportError:
+    pass
+except Exception as e:
+    print(f"⚠️ Could not set torchaudio backend: {e}")
+
 # Load environment variables and configure FFmpeg path for pydub
 
 load_dotenv()
@@ -115,7 +125,10 @@ def separate_stems_demucs(input_path: str, output_dir: str) -> bool:
 
         
         print(f"🎬 Running Demucs: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        # Pass TORCHAUDIO_USE_BACKEND to help bypass torchcodec in the subprocess
+        env = os.environ.copy()
+        env["TORCHAUDIO_USE_BACKEND"] = "soundfile"
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env)
         
         if result.returncode != 0:
              print(f"❌ Demucs failed (Code {result.returncode})")

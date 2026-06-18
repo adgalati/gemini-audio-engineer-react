@@ -19,3 +19,4 @@ demucs
 soundfile
 openunmix
 pyloudnorm
+torchcodec

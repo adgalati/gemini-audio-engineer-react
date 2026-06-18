@@ -1,0 +1,13 @@
+{
+    "job_id": "aadfc7e5-b9b0-4114-9253-e1af1b86555a",
+    "state": "initialized",
+    "progress": 0,
+    "message": "Job initialized. Ready for processing.",
+    "error": null,
+    "updated_at": "2026-01-28T22:49:21.496132",
+    "artifacts": {
+        "stems": [],
+        "midi": [],
+        "analysis": []
+    }
+}
