@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.esm.js";
@@ -8,10 +10,18 @@ import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.esm.js";
  * - Creates a draggable + resizable region
  * - Emits selection changes up to parent
  */
-export default function Waveform({ file, onSelectionChange }) {
-  const containerRef = useRef(null);
-  const wsRef = useRef(null);
-  const regionRef = useRef(null);
+interface WaveformProps {
+  file: File;
+  onSelectionChange?: (selection: { startSec: number; endSec: number; durationSec: number }) => void;
+}
+
+export default function Waveform({ file, onSelectionChange }: WaveformProps) {
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WaveSurfer | null>(null);
+  const regionRef = useRef<any>(null);
+  const onSelectionChangeRef = useRef(onSelectionChange);
+  onSelectionChangeRef.current = onSelectionChange;
 
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -20,20 +30,31 @@ export default function Waveform({ file, onSelectionChange }) {
   useEffect(() => {
     if (!containerRef.current || !file) return;
 
-    // 1. Create Object URL locally within the effect
-    const audioUrl = URL.createObjectURL(file);
+    let isCancelled = false;
+    let audioUrl = "";
+
+    try {
+      audioUrl = URL.createObjectURL(file);
+    } catch (e) {
+      console.error("Failed to create object URL for audio file:", e);
+      return;
+    }
 
     // Cleanup any previous instance
     if (wsRef.current) {
-      wsRef.current.destroy();
+      try {
+        wsRef.current.destroy();
+      } catch (e) {
+        // ignore abort on teardown
+      }
       wsRef.current = null;
       regionRef.current = null;
     }
 
-    // 2. Create the Regions plugin instance first
+    // Create the Regions plugin instance first
     const wsRegions = RegionsPlugin.create();
 
-    // 3. Create WaveSurfer
+    // Create WaveSurfer
     const ws = WaveSurfer.create({
       container: containerRef.current,
       height: 120,
@@ -50,8 +71,7 @@ export default function Waveform({ file, onSelectionChange }) {
     wsRef.current = ws;
 
     ws.on("ready", () => {
-      // Guard: if destroyed in the meantime
-      if (!wsRef.current) return;
+      if (isCancelled || !wsRef.current) return;
 
       setIsReady(true);
       const dur = ws.getDuration();
@@ -61,26 +81,37 @@ export default function Waveform({ file, onSelectionChange }) {
       const start = 0;
       const end = Math.min(dur, 600);
 
-      // 4. Add region via the plugin instance
-      const r = wsRegions.addRegion({
-        start,
-        end,
-        drag: true,
-        resize: true,
-        color: "rgba(129, 140, 248, 0.15)",
-      });
+      try {
+        const r = wsRegions.addRegion({
+          start,
+          end,
+          drag: true,
+          resize: true,
+          color: "rgba(129, 140, 248, 0.15)",
+        });
+        regionRef.current = r;
+      } catch (e) {
+        // ignore
+      }
 
-      regionRef.current = r;
-      onSelectionChange?.({ startSec: start, endSec: end, durationSec: dur });
+      onSelectionChangeRef.current?.({ startSec: start, endSec: end, durationSec: dur });
     });
 
-    ws.on("play", () => setIsPlaying(true));
-    ws.on("pause", () => setIsPlaying(false));
-    ws.on("finish", () => setIsPlaying(false));
+    ws.on("play", () => !isCancelled && setIsPlaying(true));
+    ws.on("pause", () => !isCancelled && setIsPlaying(false));
+    ws.on("finish", () => !isCancelled && setIsPlaying(false));
 
-    // 5. Listen to region events on the plugin instance
-    wsRegions.on("region-updated", (region) => {
-      onSelectionChange?.({
+    ws.on("error", (err: any) => {
+      if (err?.name === "AbortError" || String(err).includes("aborted")) {
+        return;
+      }
+      console.warn("WaveSurfer warning:", err);
+    });
+
+    // Listen to region events on the plugin instance
+    wsRegions.on("region-updated", (region: any) => {
+      if (isCancelled) return;
+      onSelectionChangeRef.current?.({
         startSec: region.start,
         endSec: region.end,
         durationSec: ws.getDuration(),
@@ -88,22 +119,49 @@ export default function Waveform({ file, onSelectionChange }) {
     });
 
     // Ensure we capture the final state after drag ends
-    wsRegions.on("region-out", (region) => {
-      onSelectionChange?.({
+    wsRegions.on("region-out", (region: any) => {
+      if (isCancelled) return;
+      onSelectionChangeRef.current?.({
         startSec: region.start,
         endSec: region.end,
         durationSec: ws.getDuration(),
       });
     });
 
-    ws.load(audioUrl);
+    try {
+      const loadPromise = ws.load(audioUrl);
+      if (loadPromise && typeof (loadPromise as any).catch === "function") {
+        (loadPromise as any).catch((err: any) => {
+          if (err?.name === "AbortError" || String(err).includes("aborted")) {
+            return;
+          }
+          console.warn("WaveSurfer load error:", err);
+        });
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError" && !String(e).includes("aborted")) {
+        console.warn("WaveSurfer load exception:", e);
+      }
+    }
 
     return () => {
-      // Cleanup: Destroy WS first, then revoke the URL
-      if (ws) ws.destroy();
-      URL.revokeObjectURL(audioUrl);
+      isCancelled = true;
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+        regionRef.current = null;
+      }
+      try {
+        ws.destroy();
+      } catch (e) {
+        // ignore abort errors on teardown
+      }
+      if (audioUrl) {
+        try {
+          URL.revokeObjectURL(audioUrl);
+        } catch (e) {}
+      }
     };
-  }, [file, onSelectionChange]);
+  }, [file]);
 
   const toggle = () => {
     if (!wsRef.current) return;

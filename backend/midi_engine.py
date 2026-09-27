@@ -10,11 +10,37 @@ from typing import Optional, Tuple
 from uuid import uuid4
 
 import mido
+import pretty_midi
+from basic_pitch.inference import Model, predict
+from basic_pitch import ICASSP_2022_MODEL_PATH
+
+# Global model instance for efficiency (loads once)
+_basic_pitch_model = Model(ICASSP_2022_MODEL_PATH)
+
+
+def extract_midi_from_audio(audio_path: str, output_midi_path: str):
+    """
+    Extract polyphonic MIDI from an audio file using Spotify's basic-pitch.
+    """
+    print(f"🎵 Extracting MIDI from: {audio_path}")
+    model_output, midi_data, note_events = predict(
+        audio_path=audio_path,
+        model_or_model_path=_basic_pitch_model,
+        onset_threshold=0.5,
+        frame_threshold=0.3,
+        minimum_note_length=100,  # ms
+    )
+    
+    # Save the pretty_midi object
+    midi_data.write(output_midi_path)
+    print(f"✅ MIDI saved to: {output_midi_path}")
+    return output_midi_path
 
 
 def extract_and_generate_midi(
+
     response_text: str,
-    output_dir: str = "static/midi"
+    output_dir: str = os.path.join("audio_jobs", "midi")
 ) -> Tuple[str, Optional[str]]:
     """
     Extract MIDI data from LLM response and generate a .mid file.
@@ -137,3 +163,53 @@ def extract_and_generate_midi(
             print(f"MIDI Generation Error: {e}")
 
     return clean_text, midi_filename
+
+
+def summarize_midi_file(midi_path: str) -> str:
+    """
+    Generate a text summary of a MIDI file for Gemini validation.
+    Includes: key stats, note density, and a list of the first few notes.
+    """
+    try:
+        mid = mido.MidiFile(midi_path)
+        summary = []
+        
+        # Stats
+        note_count = 0
+        pitches = []
+        durations = []
+        
+        for track in mid.tracks:
+            for msg in track:
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    note_count += 1
+                    pitches.append(msg.note)
+        
+        if not pitches:
+            return "Empty MIDI file."
+
+        avg_pitch = sum(pitches) / len(pitches)
+        min_pitch, max_pitch = min(pitches), max(pitches)
+        
+        summary.append(f"MIDI Summary for {os.path.basename(midi_path)}:")
+        summary.append(f"- Note Count: {note_count}")
+        summary.append(f"- Pitch Range: {min_pitch} to {max_pitch} (Avg: {avg_pitch:.1f})")
+        
+        # Note list (sample first 20 notes)
+        sample_notes = []
+        curr_time = 0
+        for track in mid.tracks:
+            for msg in track:
+                curr_time += msg.time
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    sample_notes.append(f"Note {msg.note} at {curr_time} ticks")
+                    if len(sample_notes) >= 20: break
+            if len(sample_notes) >= 20: break
+            
+        summary.append("- First 20 notes sample:")
+        summary.extend(sample_notes)
+        
+        return "\n".join(summary)
+    except Exception as e:
+        return f"Error summarizing MIDI: {str(e)}"
+
